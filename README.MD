@@ -173,6 +173,9 @@ You can use any multimodal model that Ollama supports. Some options include:
 - Very stylized or cursive handwriting may still pose challenges
 - Large images may need to be resized for optimal performance
 
+## Ollama direct API call examples 
+```url -X POST http://localhost:11434/api/generate -d '{"model": "llava:latest", "prompt": "Hello"}'```
+
 ## License
 
 [MIT License](LICENSE)
