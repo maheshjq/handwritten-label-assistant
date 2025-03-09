@@ -2,6 +2,42 @@
 
 A lightweight, efficient solution for recognizing handwritten text using multimodal Large Language Models (LLMs) running locally through Ollama.
 
+## System Architecture
+
+```mermaid
+flowchart TD
+    subgraph "Image Input"
+        InputImage[Image Upload] --> Preprocessing[Image Preprocessing]
+    end
+    
+    subgraph "Recognition Pipeline"
+        Preprocessing --> OllamaAPI[Ollama API]
+        OllamaAPI --> LLM[Multimodal LLM]
+        LLM --> TextOutput[Text Transcription]
+        TextOutput --> StructureExtraction[Structure Extraction]
+    end
+    
+    subgraph "Validation & Integration"
+        StructureExtraction --> Validation[Data Validation]
+        Validation --> DecisionPoint{Valid?}
+        DecisionPoint -->|Yes| Integration[System Integration]
+        DecisionPoint -->|No| HumanReview[Human Review]
+        HumanReview --> Correction[Correction]
+        Correction --> Integration
+    end
+    
+    subgraph "Data Storage & Retrieval"
+        Integration --> Database[(Inventory Database)]
+        Database --> Search[Search & Retrieval]
+    end
+    
+    style OllamaAPI fill:#f9d5e5
+    style LLM fill:#f9d5e5
+    style DecisionPoint fill:#eeeeee
+    style HumanReview fill:#d5f9e5
+    style Correction fill:#d5f9e5
+```
+
 ## Features
 
 - 🖋️ High-accuracy handwritten text recognition using multimodal LLMs
