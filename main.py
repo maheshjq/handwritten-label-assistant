@@ -12,7 +12,16 @@ import cv2
 import io
 import logging
 from typing import Optional, List
+from enum import Enum
 
+
+# Define a ModelSize enum class
+class ModelSize(str, Enum):
+    small = "small"
+    base = "base"
+    large = "large"
+    
+    
 # Setup logging
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -309,7 +318,7 @@ def read_root():
 @app.post("/recognize", response_model=OCRResult)
 async def recognize_handwriting(
     file: UploadFile = File(...),
-    model_size: str = Query(DEFAULT_MODEL, description="Model size (base, large, or small)"),
+    model_size: ModelSize = Query(ModelSize.large, description="Model size to use"),
     apply_contrast: bool = Query(True, description="Apply contrast enhancement"),
     apply_binarization: bool = Query(True, description="Apply binarization"),
     apply_noise_reduction: bool = Query(True, description="Apply noise reduction"),
@@ -320,7 +329,7 @@ async def recognize_handwriting(
     
     Args:
         file (UploadFile): The image file to process.
-        model_size (str): The TrOCR model size to use.
+        model_size (ModelSize): The TrOCR model size to use.
         apply_* (bool): Image preprocessing options.
     
     Returns:
