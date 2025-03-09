@@ -1,35 +1,27 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from transformers import TrOCRProcessor, VisionEncoderDecoderModel
-from PIL import Image, ImageOps, ImageEnhance, ImageFilter
-import torch
-import numpy as np
-import re
-import os
-import tempfile
-import cv2
-import io
-import logging
-from typing import Optional, List
 from enum import Enum
+from PIL import Image
+import requests
+import base64
+import io
+import re
+import logging
+import os
+import json
+from typing import Dict, Any, List, Optional
+from config import DEFAULT_MODEL, OLLAMA_API_URL, RECOGNITION_PROMPT
 
-
-# Define a ModelSize enum class
-class ModelSize(str, Enum):
-    small = "small"
-    base = "base"
-    large = "large"
-    
-    
 # Setup logging
-logging.basicConfig(level=logging.INFO, 
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Initialize the FastAPI app
 app = FastAPI(title="Handwritten Label AI Assistant",
-              description="An API for recognizing handwritten text in images",
+              description="An API for recognizing handwritten text in images using Ollama",
               version="1.0.0")
 
 # Add CORS middleware
@@ -41,234 +33,124 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Define OCR model options
-MODEL_OPTIONS = {
-    "base": "microsoft/trocr-base-handwritten",
-    "large": "microsoft/trocr-large-handwritten",
-    "small": "microsoft/trocr-small-handwritten"
-}
+# Define Ollama model options as an Enum for Swagger dropdown
+class ModelName(str, Enum):
+    llava = DEFAULT_MODEL  # "llava:latest"
+    bakllava = "bakllava:latest"
+    llava_13b = "llava:13b"
+    llava_7b = "llava:7b"
 
-# Default to the large model for better accuracy
-DEFAULT_MODEL = "large"
+# Pydantic models for response
+class OCRResult(BaseModel):
+    full_text: str
+    structured_data: Dict[str, Any]
+    confidence_score: float = 0.0
 
-# Initialize processor and model (lazy loading on first request)
-processor = None
-model = None
-
-def load_model(model_size="large"):
-    """
-    Lazy-load the TrOCR model and processor.
-    Args:
-        model_size (str): Size of the model to load ("base", "large", or "small")
-    """
-    global processor, model
-    
-    if model_size not in MODEL_OPTIONS:
-        model_size = DEFAULT_MODEL
-        
-    model_name = MODEL_OPTIONS[model_size]
-    logger.info(f"Loading model: {model_name}")
-    
-    try:
-        processor = TrOCRProcessor.from_pretrained(model_name, use_fast=True)
-        model = VisionEncoderDecoderModel.from_pretrained(model_name)
-        
-        # Move model to GPU if available
-        if torch.cuda.is_available():
-            model = model.to("cuda")
-            logger.info("Model loaded on GPU")
-        else:
-            logger.info("Model loaded on CPU")
-    except Exception as e:
-        logger.error(f"Error loading model: {str(e)}")
-        raise Exception(f"Failed to load OCR model: {str(e)}")
-
-# Pydantic models for request bodies
 class Transcription(BaseModel):
     text: str
 
 class IntegrationData(BaseModel):
     transcription: str
 
-class OCRResult(BaseModel):
-    full_text: str
-    structured_data: dict
-    confidence_score: float = 0.0
-    preprocessing_applied: List[str] = []
+# Prompt template for Ollama
+def get_recognition_prompt():
+    return RECOGNITION_PROMPT
 
-# Image preprocessing functions
-def preprocess_image(image, preprocessing_options=None):
+def recognize_handwriting_with_ollama(image_data, model_name="llava:latest"):
     """
-    Apply various preprocessing techniques to improve OCR accuracy.
+    Recognize handwritten text in an image using a multimodal LLM through Ollama
     
     Args:
-        image (PIL.Image): The input image.
-        preprocessing_options (dict): Options for preprocessing.
+        image_data: Binary image data
+        model_name: Name of the multimodal model in Ollama
     
     Returns:
-        (PIL.Image, list): Preprocessed image and list of applied techniques.
+        dict: Recognition results with extracted text and confidence
     """
-    if preprocessing_options is None:
-        preprocessing_options = {
-            "resize": True,
-            "contrast_enhancement": True,
-            "grayscale": True,
-            "binarization": True,
-            "noise_reduction": True,
-            "deskew": True
-        }
+    # Encode the image to base64
+    base64_image = base64.b64encode(image_data).decode("utf-8")
     
-    applied_techniques = []
+    # Get the prompt
+    prompt = get_recognition_prompt()
     
-    # Convert to grayscale if requested
-    if preprocessing_options.get("grayscale", True):
-        image = ImageOps.grayscale(image)
-        applied_techniques.append("grayscale")
+    # Set up the API request
+    payload = {
+        "model": model_name,
+        "prompt": prompt,
+        "images": [base64_image],
+        "stream": False,
+        "format": "json"  # Request JSON output if the model supports it
+    }
     
-    # Apply contrast enhancement if requested
-    if preprocessing_options.get("contrast_enhancement", True):
-        enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(2.0)  # Increase contrast
-        applied_techniques.append("contrast_enhancement")
+    logger.info(f"Sending request to Ollama with model: {model_name}")
     
-    # Resize the image if requested (helps with model input requirements)
-    if preprocessing_options.get("resize", True):
-        # Resize while maintaining aspect ratio
-        max_size = 1000
-        ratio = max_size / max(image.size)
-        new_size = tuple([int(x * ratio) for x in image.size])
-        image = image.resize(new_size, Image.LANCZOS)
-        applied_techniques.append("resize")
-    
-    # Apply binarization if requested
-    if preprocessing_options.get("binarization", True):
-        # Convert PIL image to OpenCV format
-        opencv_image = np.array(image)
+    # Send the request to Ollama
+    try:
+        response = requests.post(OLLAMA_API_URL, json=payload)
+        response.raise_for_status()
         
-        # Apply adaptive thresholding
-        if len(opencv_image.shape) == 2:  # Grayscale
-            _, binary_image = cv2.threshold(
-                opencv_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-            )
-        else:  # Color
-            gray = cv2.cvtColor(opencv_image, cv2.COLOR_RGB2GRAY)
-            _, binary_image = cv2.threshold(
-                gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-            )
+        result = response.json()
+        response_text = result.get("response", "{}")
         
-        # Convert back to PIL
-        image = Image.fromarray(binary_image)
-        applied_techniques.append("binarization")
-    
-    # Apply noise reduction if requested
-    if preprocessing_options.get("noise_reduction", True):
-        image = image.filter(ImageFilter.MedianFilter(size=3))
-        applied_techniques.append("noise_reduction")
-    
-    # Apply deskewing if requested
-    if preprocessing_options.get("deskew", True):
-        # Convert PIL image to OpenCV format
-        opencv_image = np.array(image)
-        
-        # OpenCV expects a grayscale image for deskewing
-        if len(opencv_image.shape) == 3:
-            opencv_image = cv2.cvtColor(opencv_image, cv2.COLOR_RGB2GRAY)
-        
-        # Calculate skew angle
-        coords = np.column_stack(np.where(opencv_image > 0))
-        angle = cv2.minAreaRect(coords)[-1]
-        
-        # Adjust the angle
-        if angle < -45:
-            angle = -(90 + angle)
-        else:
-            angle = -angle
-        
-        # Only deskew if angle is significant
-        if abs(angle) > 0.5:
-            (h, w) = opencv_image.shape[:2]
-            center = (w // 2, h // 2)
-            M = cv2.getRotationMatrix2D(center, angle, 1.0)
-            rotated = cv2.warpAffine(
-                opencv_image, M, (w, h), 
-                flags=cv2.INTER_CUBIC, 
-                borderMode=cv2.BORDER_REPLICATE
-            )
+        # Try to parse the response as JSON
+        try:
+            parsed_response = json.loads(response_text)
             
-            # Convert back to PIL
-            image = Image.fromarray(rotated)
-            applied_techniques.append("deskew")
+            # Ensure we have the expected keys
+            if "text" not in parsed_response:
+                parsed_response["text"] = response_text
+            
+            if "confidence" not in parsed_response:
+                parsed_response["confidence"] = 0.8  # Default confidence
+            else:
+                # Convert percentage to decimal if needed
+                if isinstance(parsed_response["confidence"], (int, float)) and parsed_response["confidence"] > 1:
+                    parsed_response["confidence"] /= 100
+            
+            if "structured_data" not in parsed_response:
+                parsed_response["structured_data"] = extract_structured_data(parsed_response["text"])
+                
+            return parsed_response
+            
+        except json.JSONDecodeError:
+            # If LLM doesn't return JSON, parse the text response
+            logger.warning("Failed to parse JSON response, falling back to text parsing")
+            
+            # Extract text and confidence through simple parsing
+            extracted_text = response_text
+            confidence = 0.8  # Default confidence
+            
+            # Try to extract confidence if mentioned
+            confidence_match = re.search(r"confidence.*?(\d+)", response_text, re.IGNORECASE)
+            if confidence_match:
+                try:
+                    confidence = float(confidence_match.group(1)) / 100
+                except ValueError:
+                    pass
+            
+            # Extract structured data
+            structured_data = extract_structured_data(extracted_text)
+            
+            return {
+                "text": extracted_text,
+                "confidence": confidence,
+                "structured_data": structured_data
+            }
     
-    return image, applied_techniques
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error connecting to Ollama: {e}")
+        raise HTTPException(status_code=500, detail=f"Ollama API error: {str(e)}")
 
-# TrOCR processing functions
-def process_with_trocr(image, model_size="large"):
+def extract_structured_data(text):
     """
-    Process an image with TrOCR model.
+    Extract structured data from recognized text
     
     Args:
-        image (PIL.Image): The preprocessed image.
-        model_size (str): The model size to use.
+        text: Recognized text
     
     Returns:
-        (str, float): Recognized text and confidence score.
+        dict: Structured data extracted from text
     """
-    global processor, model
-    
-    # Lazy loading of model
-    if processor is None or model is None:
-        load_model(model_size)
-    
-    # Make sure image is RGB
-    if image.mode != "RGB":
-        image = image.convert("RGB")
-    
-    # Process image
-    pixel_values = processor(image, return_tensors="pt").pixel_values
-    
-    # Move to GPU if available
-    if torch.cuda.is_available():
-        pixel_values = pixel_values.to("cuda")
-    
-    # Generate text with beam search for better results
-    generated_ids = model.generate(
-        pixel_values,
-        max_length=128,
-        num_beams=5,
-        early_stopping=True
-    )
-    
-    # Decode the generated text
-    generated_text = processor.batch_decode(
-        generated_ids,
-        skip_special_tokens=True
-    )[0]
-    
-    # Calculate a simple confidence score based on token probabilities
-    # (this is a simplified approximation)
-    with torch.no_grad():
-        outputs = model(pixel_values, generated_ids)
-        logits = outputs.logits
-        probabilities = torch.softmax(logits, dim=-1)
-        token_probs = torch.max(probabilities, dim=-1).values
-        confidence_score = float(torch.mean(token_probs).cpu().numpy())
-    
-    return generated_text, confidence_score
-
-# Post-processing function
-def post_process_text(text):
-    """
-    Extract structured data from recognized text.
-    
-    Args:
-        text (str): Recognized text.
-    
-    Returns:
-        dict: Structured data extracted from text.
-    """
-    # Basic cleaning
-    cleaned_text = " ".join(text.split()).strip()
-    
     structured_data = {}
     
     # Extract item ID if present
@@ -289,13 +171,13 @@ def post_process_text(text):
     
     # Try each pattern until we find a match
     for pattern in item_id_patterns:
-        match = re.search(pattern, cleaned_text, re.IGNORECASE)
+        match = re.search(pattern, text, re.IGNORECASE)
         if match:
             structured_data["ItemID"] = match.group(1)
             break
     
     for pattern in location_patterns:
-        match = re.search(pattern, cleaned_text, re.IGNORECASE)
+        match = re.search(pattern, text, re.IGNORECASE)
         if match:
             structured_data["Location"] = match.group(1).strip()
             break
@@ -312,25 +194,20 @@ def health_check():
 @app.get("/")
 def read_root():
     """Welcome message for the root URL."""
-    return {"message": "Welcome to the Handwritten Label AI Assistant!"}
+    return {"message": "Welcome to the Handwritten Label AI Assistant using Ollama!"}
 
 # Handwriting recognition endpoint
 @app.post("/recognize", response_model=OCRResult)
 async def recognize_handwriting(
     file: UploadFile = File(...),
-    model_size: ModelSize = Query(ModelSize.large, description="Model size to use"),
-    apply_contrast: bool = Query(True, description="Apply contrast enhancement"),
-    apply_binarization: bool = Query(True, description="Apply binarization"),
-    apply_noise_reduction: bool = Query(True, description="Apply noise reduction"),
-    apply_deskew: bool = Query(True, description="Apply deskewing")
+    model_name: ModelName = Query(ModelName.llava, description="Ollama model to use")
 ):
     """
-    Recognize handwritten text in an image.
+    Recognize handwritten text in an image using Ollama.
     
     Args:
         file (UploadFile): The image file to process.
-        model_size (ModelSize): The TrOCR model size to use.
-        apply_* (bool): Image preprocessing options.
+        model_name (ModelName): The Ollama model to use.
     
     Returns:
         OCRResult: The recognized text and structured data.
@@ -341,37 +218,15 @@ async def recognize_handwriting(
     try:
         # Read the image file
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert("RGB")
         
-        # Set preprocessing options
-        preprocessing_options = {
-            "resize": True,
-            "contrast_enhancement": apply_contrast,
-            "grayscale": True,
-            "binarization": apply_binarization,
-            "noise_reduction": apply_noise_reduction,
-            "deskew": apply_deskew
-        }
-        
-        # Preprocess the image
-        preprocessed_image, applied_techniques = preprocess_image(
-            image, preprocessing_options
-        )
-        
-        # Process with TrOCR
-        text, confidence_score = process_with_trocr(
-            preprocessed_image, model_size
-        )
-        
-        # Extract structured data
-        structured_data = post_process_text(text)
+        # Process with Ollama
+        result = recognize_handwriting_with_ollama(contents, model_name)
         
         # Prepare response
         return OCRResult(
-            full_text=text,
-            structured_data=structured_data,
-            confidence_score=confidence_score,
-            preprocessing_applied=applied_techniques
+            full_text=result.get("text", ""),
+            structured_data=result.get("structured_data", {}),
+            confidence_score=result.get("confidence", 0.0)
         )
         
     except Exception as e:
@@ -385,7 +240,7 @@ async def validate_transcription(transcription: Transcription):
     Validate the transcription text.
     """
     # Extract structured data
-    structured_data = post_process_text(transcription.text)
+    structured_data = extract_structured_data(transcription.text)
     
     # Check if required fields are present
     is_valid = "ItemID" in structured_data
@@ -402,7 +257,7 @@ async def integrate_data(data: IntegrationData):
     Integrate validated data into an inventory system (placeholder).
     """
     # Extract structured data
-    structured_data = post_process_text(data.transcription)
+    structured_data = extract_structured_data(data.transcription)
     
     # In a real system, you would save this to a database
     return {
@@ -411,60 +266,77 @@ async def integrate_data(data: IntegrationData):
     }
 
 # Local testing function
-def handwritten_label_assistant(image_path, model_size=DEFAULT_MODEL):
+def handwritten_label_assistant(image_path, model_name=ModelName.llava):
     """
     Process a handwritten label image locally.
     
     Args:
         image_path (str): Path to the image file.
-        model_size (str): Size of the model to use.
+        model_name (str): Name of the Ollama model to use.
     
     Returns:
         dict: Recognition results.
     """
     logger.info(f"Processing image: {image_path}")
     
-    # Open and preprocess the image
-    image = Image.open(image_path).convert("RGB")
-    preprocessed_image, applied_techniques = preprocess_image(image)
+    # Read the image file
+    with open(image_path, "rb") as image_file:
+        image_data = image_file.read()
     
-    # Process with TrOCR
-    text, confidence_score = process_with_trocr(preprocessed_image, model_size)
-    logger.info(f"Generated text: {text} (confidence: {confidence_score:.2f})")
+    # Process with Ollama
+    result = recognize_handwriting_with_ollama(image_data, model_name)
     
-    # Extract structured data
-    structured_data = post_process_text(text)
-    logger.info(f"Structured data: {structured_data}")
+    # Log results
+    logger.info(f"Generated text: {result.get('text', '')} (confidence: {result.get('confidence', 0):.2f})")
+    logger.info(f"Structured data: {result.get('structured_data', {})}")
     
-    return {
-        "full_text": text,
-        "structured_data": structured_data,
-        "confidence_score": confidence_score,
-        "preprocessing_applied": applied_techniques
-    }
+    return result
 
 # Run locally if executed directly
 if __name__ == "__main__":
+    import json
+    
+    # Import missing modules
+    try:
+        import json
+    except ImportError:
+        logger.error("Missing required module: json")
+        exit(1)
+    
     # Specify image path for local testing
     sample_image_path = "label_image.png"
     
+    # Check if the file exists
+    if not os.path.exists(sample_image_path):
+        logger.error(f"File not found: {sample_image_path}")
+        print(f"\nError: The file '{sample_image_path}' doesn't exist.")
+        print("Please specify a valid image path by editing the 'sample_image_path' variable.")
+        exit(1)
+    
     # Process the image
-    result = handwritten_label_assistant(sample_image_path)
+    try:
+        result = handwritten_label_assistant(sample_image_path)
     
-    # Print results
-    print("\nRecognition Results:")
-    print(f"Text: {result['full_text']}")
-    print(f"Confidence: {result['confidence_score']:.2f}")
-    print(f"Preprocessing: {', '.join(result['preprocessing_applied'])}")
-    
-    # Print structured data
-    print("\nStructured Data:")
-    if result['structured_data']:
-        for key, value in result['structured_data'].items():
-            print(f"{key}: {value}")
-    else:
-        print("No structured data found")
-    
-    # Print full text if no structured data
-    if not result['structured_data']:
-        print(f"\nFull Text: {result['full_text']}")
+        # Print results
+        print("\nRecognition Results:")
+        print(f"Text: {result.get('text', '')}")
+        print(f"Confidence: {result.get('confidence', 0):.2f}")
+        
+        # Print structured data
+        print("\nStructured Data:")
+        if result.get('structured_data', {}):
+            for key, value in result.get('structured_data', {}).items():
+                print(f"{key}: {value}")
+        else:
+            print("No structured data found")
+            
+        # Print full text if no structured data
+        if not result.get('structured_data', {}):
+            print(f"\nFull Text: {result.get('text', '')}")
+    except Exception as e:
+        logger.error(f"Error in local testing: {str(e)}")
+        print(f"\nError: {str(e)}")
+        print("\nTips for troubleshooting:")
+        print("1. Make sure Ollama is installed and running")
+        print("2. Check that you have pulled the model (e.g., 'ollama pull llava:latest')")
+        print("3. Verify that the image file exists and is a supported format")
