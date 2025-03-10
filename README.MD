@@ -134,7 +134,7 @@ for key, value in structured_data.items():
 
 1. Start the FastAPI server:
    ```
-   uvicorn api:app --reload
+   uvicorn main:app --reload
    ```
 
 2. Visit `http://127.0.0.1:8000/docs` to access the Swagger UI.
