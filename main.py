@@ -39,6 +39,9 @@ class ModelName(str, Enum):
     bakllava = "bakllava:latest"
     llava_13b = "llava:13b"
     llava_7b = "llava:7b"
+    llava_phi = "llava-phi:latest"
+    cogvlm_lite = "cogvlm-lite:latest"
+    mobilevlm = "mobilevlm:latest"
 
 # Pydantic models for response
 class OCRResult(BaseModel):
