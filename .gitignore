@@ -1,3 +1,6 @@
-/lable_vision_env
-/label_vision_env
-/ocr_env
+lable_vision_env
+label_vision_env
+ocr_env
+.venv
+.qodo
+node_modules
