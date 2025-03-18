@@ -46,8 +46,9 @@ const RecognitionForm = ({ onRecognitionComplete, onProcessingStart }) => {
         formData.append('model_name', values.model_name);
       }
       
-      formData.append('preprocess', values.preprocess);
-      formData.append('skip_review', values.skip_review);
+      // Convert boolean values to string
+      formData.append('preprocess', values.preprocess.toString());
+      formData.append('skip_review', values.skip_review.toString());
       
       const result = await recognizeHandwriting(formData);
       onRecognitionComplete?.(result);
