@@ -1,17 +1,118 @@
-.app-container {
+/* src/App.css */
+/* Main layout styles */
+.app-layout {
   min-height: 100vh;
 }
 
-.content-container {
+.app-header {
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+}
+
+.logo {
+  margin-right: 24px;
+}
+
+.app-content {
   padding: 24px;
-  margin: 0;
-  min-height: 280px;
+  background-color: #f0f2f5;
 }
 
-.page-header {
-  margin-bottom: 24px;
+.content-container {
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
-.card-container {
-  margin-bottom: 24px;
+/* Home page styles */
+.home-page .step {
+  text-align: center;
+  padding: 16px;
+}
+
+.home-page .step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
+  background-color: #1890ff;
+  color: white;
+  border-radius: 50%;
+  font-size: 24px;
+  font-weight: bold;
+}
+
+/* Upload container styles */
+.upload-container {
+  border: 2px dashed #d9d9d9;
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.3s;
+}
+
+.upload-container:hover {
+  border-color: #1890ff;
+}
+
+.upload-container.active {
+  border-color: #52c41a;
+  background-color: rgba(82, 196, 26, 0.05);
+}
+
+.upload-container.disabled {
+  cursor: not-allowed;
+  background-color: #f5f5f5;
+}
+
+.upload-prompt {
+  padding: 32px 0;
+}
+
+.upload-preview {
+  padding: 16px 0;
+}
+
+.upload-loading {
+  padding: 32px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Confidence indicator styles */
+.confidence-indicator {
+  display: flex;
+  align-items: center;
+}
+
+/* Recognition results styles */
+.result-card {
+  margin-top: 24px;
+}
+
+/* Advanced options styles */
+.advanced-options {
+  padding: 8px;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+}
+
+/* Media queries for responsiveness */
+@media (max-width: 768px) {
+  .app-header {
+    padding: 0 10px;
+  }
+  
+  .app-content {
+    padding: 16px;
+  }
+  
+  .logo {
+    margin-right: 12px;
+  }
 }
