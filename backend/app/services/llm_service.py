@@ -37,11 +37,15 @@ def get_provider_for_model(model_name: str) -> LLMProvider:
     """
     settings = get_settings()
     
+    # Explicitly check for Groq vision models first
+    if "llama" in model_name and "vision" in model_name:
+        return LLMProvider.GROQ
+    
     # Ollama models
     if model_name in settings.SUPPORTED_MODELS or "llava" in model_name or "bakllava" in model_name:
         return LLMProvider.OLLAMA
     
-    # Groq models
+    # Other Groq models
     if model_name.startswith("llama") or model_name.startswith("mixtral"):
         return LLMProvider.GROQ
     
@@ -126,6 +130,7 @@ def process_with_ollama(
 def process_with_groq(
     prompt: str,
     model_name: str,
+    image_data: Optional[bytes] = None,
     temperature: float = 0.7
 ) -> Dict[str, Any]:
     """
@@ -134,6 +139,7 @@ def process_with_groq(
     Args:
         prompt: The prompt to send to the model
         model_name: The name of the model to use
+        image_data: Optional image data for multimodal models
         temperature: Temperature for generation
         
     Returns:
@@ -149,11 +155,35 @@ def process_with_groq(
         "Content-Type": "application/json"
     }
     
-    payload = {
-        "model": model_name,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": temperature
-    }
+    # Check if this is a vision model request with image
+    if image_data and "vision" in model_name:
+        # Construct content array with image and text
+        base64_image = base64.b64encode(image_data).decode("utf-8")
+        content = [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{base64_image}"
+                }
+            },
+            {
+                "type": "text",
+                "text": prompt
+            }
+        ]
+        
+        payload = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": content}],
+            "temperature": temperature
+        }
+    else:
+        # Standard text-only request
+        payload = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature
+        }
     
     try:
         response = requests.post(
@@ -407,7 +437,7 @@ def process_text_with_llm(
     if provider == LLMProvider.OLLAMA:
         return process_with_ollama(prompt, model_name, None, temperature)
     elif provider == LLMProvider.GROQ:
-        return process_with_groq(prompt, model_name, temperature)
+        return process_with_groq(prompt, model_name, None, temperature)
     elif provider == LLMProvider.CLAUDE:
         return process_with_claude(prompt, model_name, temperature)
     elif provider == LLMProvider.OPENAI:
@@ -435,16 +465,24 @@ def recognize_handwriting(
     if model_name is None:
         model_name = settings.DEFAULT_MODEL
     
-    # Currently only Ollama supports image processing
+    # Determine provider based on model name
     provider = get_provider_for_model(model_name)
-    if provider != LLMProvider.OLLAMA:
-        raise ValueError(f"Image processing not supported by provider: {provider}")
     
-    return process_with_ollama(
-        prompt=settings.RECOGNITION_PROMPT,
-        model_name=model_name,
-        image_data=image_data
-    )
+    # Process with the appropriate provider
+    if provider == LLMProvider.OLLAMA:
+        return process_with_ollama(
+            prompt=settings.RECOGNITION_PROMPT,
+            model_name=model_name,
+            image_data=image_data
+        )
+    elif provider == LLMProvider.GROQ and "vision" in model_name:
+        return process_with_groq(
+            prompt=settings.RECOGNITION_PROMPT,
+            model_name=model_name,
+            image_data=image_data
+        )
+    else:
+        raise ValueError(f"Image processing not supported by provider: {provider}")
 
 def hash_content(content: bytes) -> str:
     """

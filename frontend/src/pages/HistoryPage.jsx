@@ -33,7 +33,11 @@ const HistoryPage = () => {
       try {
         const savedHistory = localStorage.getItem('recognition_history');
         if (savedHistory) {
-          setHistory(JSON.parse(savedHistory));
+          const parsedHistory = JSON.parse(savedHistory);
+          console.log('Loaded history:', parsedHistory); // Add this for debugging
+          setHistory(parsedHistory);
+        } else {
+          console.log('No history found in localStorage'); // Add this for debugging
         }
       } catch (err) {
         console.error('Error loading history:', err);

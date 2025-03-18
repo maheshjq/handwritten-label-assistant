@@ -40,6 +40,7 @@ async def get_available_models(
         
         # Add Groq models if API key is available
         if settings.GROQ_API_KEY:
+            # Add standard Groq models
             models.append(
                 AvailableModel(
                     name="llama-3-8b",
@@ -54,6 +55,15 @@ async def get_available_models(
                     provider=ModelProvider.GROQ,
                     description="Groq LLaMA 3 70B model",
                     capabilities=["text_processing"]
+                )
+            )
+            # Add Groq vision model
+            models.append(
+                AvailableModel(
+                    name="llama-3.2-11b-vision-preview",
+                    provider=ModelProvider.GROQ,
+                    description="Groq LLaMA 3.2 Vision Preview model",
+                    capabilities=["image_recognition", "text_processing"]
                 )
             )
         

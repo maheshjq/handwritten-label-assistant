@@ -20,6 +20,9 @@ const RecognitionPage = () => {
       setWorkflowId(result.recognition?.recognition?.metadata?.image_hash || `workflow_${Date.now()}`);
     }
     
+    // Save to history
+    saveToHistory(result);
+    
     // Automatically show review if needed
     if (result?.next_step === 'human_review') {
       setShowReview(true);
@@ -41,10 +44,56 @@ const RecognitionPage = () => {
   const handleReviewComplete = (updatedResult) => {
     setWorkflowResult(updatedResult);
     setShowReview(false);
+    
+    // Save updated result to history
+    saveToHistory(updatedResult);
   };
   
   const handleImageCapture = (imageUrl) => {
     setOriginalImage(imageUrl);
+  };
+
+  const saveToHistory = (result) => {
+    if (!result) return;
+    
+    // Try to get existing history
+    let history = [];
+    try {
+      const savedHistory = localStorage.getItem('recognition_history');
+      if (savedHistory) {
+        history = JSON.parse(savedHistory);
+      }
+    } catch (err) {
+      console.error('Error loading history:', err);
+    }
+    
+    // Create history entry
+    const historyEntry = {
+      id: result.recognition?.recognition?.metadata?.image_hash || `result_${Date.now()}`,
+      timestamp: result.timestamp || Math.floor(Date.now() / 1000),
+      text: result.final_result?.text || '',
+      confidence: result.final_result?.confidence || 0,
+      model: result.models_used?.recognition || 'unknown',
+      next_step: result.next_step || 'complete',
+      image_url: originalImage,
+      ...result
+    };
+    
+    // Add to history (avoiding duplicates by ID)
+    const existingIndex = history.findIndex(item => item.id === historyEntry.id);
+    if (existingIndex >= 0) {
+      history[existingIndex] = historyEntry;
+    } else {
+      history.unshift(historyEntry); // Add to beginning of array
+    }
+    
+    // Limit history size (optional, keeping last 50 items)
+    if (history.length > 50) {
+      history = history.slice(0, 50);
+    }
+    
+    // Save updated history
+    localStorage.setItem('recognition_history', JSON.stringify(history));
   };
   
   return (
