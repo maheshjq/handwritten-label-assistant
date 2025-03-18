@@ -46,9 +46,14 @@ const RecognitionForm = ({ onRecognitionComplete, onProcessingStart }) => {
         formData.append('model_name', values.model_name);
       }
       
-      // Convert boolean values to string
-      formData.append('preprocess', values.preprocess.toString());
-      formData.append('skip_review', values.skip_review.toString());
+      // Convert boolean values to string - add null checks
+      formData.append('preprocess', values.preprocess !== undefined ? values.preprocess.toString() : 'true');
+      formData.append('skip_review', values.skip_review !== undefined ? values.skip_review.toString() : 'false');
+      
+      // Use the same model for review - this ensures we use Ollama for review too
+      if (values.model_name) {
+        formData.append('review_model', values.model_name);
+      }
       
       const result = await recognizeHandwriting(formData);
       onRecognitionComplete?.(result);

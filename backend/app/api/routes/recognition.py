@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 async def recognize_handwriting(
     file: UploadFile = File(...),
     model_name: Optional[str] = Form(None),
+    review_model: Optional[str] = Form(None),  # Added review_model parameter
     preprocess: bool = Form(True),
     skip_review: bool = Form(False),
     settings: Settings = Depends(get_settings)
@@ -47,6 +48,7 @@ async def recognize_handwriting(
         result = agent_orchestrator.process_image_workflow(
             image_data=contents,
             recognition_model=model_name,
+            review_model=review_model,  # Pass review_model to the workflow
             preprocess=preprocess,
             skip_review=skip_review
         )

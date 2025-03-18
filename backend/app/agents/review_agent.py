@@ -140,13 +140,16 @@ def review_recognition(
     
     except Exception as e:
         logger.error(f"Error reviewing recognition: {str(e)}")
+        # Make sure to include required fields even when there's an error
         return {
             "needs_human_review": True,
             "suggestions": [],
             "explanation": f"Error during review: {str(e)}",
             "corrected_text": None,
             "corrected_structured_data": None,
-            "error": str(e)
+            "error": str(e),
+            "model_used": review_model,  # Add the missing required field
+            "timestamp": time.time()     # Add the missing required field
         }
 
 def apply_corrections(

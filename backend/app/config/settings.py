@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     
     # Model settings
     DEFAULT_MODEL: str = Field("llava:latest", description="Default model to use for recognition")
-    DEFAULT_REVIEW_MODEL: str = Field("gpt-4o", description="Default model to use for review")
+    DEFAULT_REVIEW_MODEL: str = Field("llava:latest", description="Default model to use for review")
     SUPPORTED_MODELS: List[str] = Field(
         ["llava:latest", "bakllava:latest", "llava:13b", "llava:7b", "cogvlm-lite:latest"],
         description="List of supported models"
