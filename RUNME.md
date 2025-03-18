@@ -65,6 +65,9 @@ To start your frontend separately, navigate to the frontend directory and run:
 ```bash
 cd ../frontend
 npm run dev
-```
+  VITE v6.2.2  ready in 76 ms
 
-The frontend should be available at http://localhost:3000.
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+  ➜  press h + enter to show help
+```
